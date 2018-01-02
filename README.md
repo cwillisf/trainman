@@ -1,2 +1,0 @@
-# trainman
-Wood Stove Automation
