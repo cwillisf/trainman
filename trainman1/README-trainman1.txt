@@ -122,19 +122,21 @@ Not so with the holes below this row.  There is just a grid of unlabeled holes. 
 
 POWER WIRES: All wire is Solid AWG22 of specified color.  Both the ADC and the AMPs use 5VDC for power.  I standardize the color of the wire when possible to reduce confusion.  Black is GND and Red is +5VDC.  There is leeway in which holes can be used but would recommend staying away from rows 6 and 9.  It is very easy to melt the female headers with a soldering iron.
 
- - GND For ADC and AMPS: Black D11-D14, K11-K14, R11-O14, O5-N14
- - +5VDC For ADC and AMPS: Red C10-C13, J10-J13, Q10-O13, N5-M13
-
-I2C WIRES FOR THE ADC:  These are used by the Pi to talk to the digitizer module.  I use Blue for Clock and Purple for the Data.
-
- - SDA for ADC: Purple SDA-Q4
- - SCL for ADC: Blue SCL-P3
+ - GND For ADC and AMPS: Black D11-D14, K11-K14, R11-O14
+ - +5VDC For ADC and AMPS: Red C10-C13, J10-J13, Q10-O13
 
 SIGNAL WIRES:  These wires carry the analog voltage level representing the temperature detected by the thermocouple to the correct channel on the ADC.  Higher temperature means higher voltage.  The ADC reads the voltages and digitizes the signal voltage versus ground and makes these values available to be read by a call to the I2C bus.   I use whatever colors are leftover for miscellaneous things like signal wires and GPIO pins.  
 
  - Analog Level from AMP0 to ChannelA0: Brown  E10-T4
  - Analog Level from AMP1 to ChannelA1: Orange L10-U4
  - Analog Level from AMP2 to ChannelA2: Yellow S10-V4
+
+I2C WIRES AND POWER FOR THE ADC:  These are used by the Pi to talk to the digitizer module.  I use Blue for Clock and Purple for the Data.  Note: Ignore the solder points in the picture if you are planning to go to the next phase.  There needs to be a terminal block soldered on row 5 so these are all soldered on row 3
+
+ - GND for ADC: O3-N14
+ - +5VDC for ADC: N3-M13
+ - SDA for ADC: Purple SDA-Q3
+ - SCL for ADC: Blue SCL-P3
 
 19) Pi Hat INSTALLATION
 
