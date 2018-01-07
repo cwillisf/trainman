@@ -14,9 +14,9 @@ CURRENT PHASES:
 
 Trainman #1: Read stove and pipe temperatures using thermocouple amplifiers and an analog digitizer
 
-Trainman #2: Read room temperture from a 1-wire server and temperature sensor
+Trainman #2: Display stove, pipe and room temperatures on alphanumeric LED displays
 
-Trainman #3: Display stove, pipe and room temperatures on alphanumeric LED displays
+Trainman #3: Read and display room temperture from a 1-wire server and temperature sensor
 
 Trainman #4: User control of the running program using buttons 
 

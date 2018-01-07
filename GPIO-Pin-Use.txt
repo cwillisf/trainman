@@ -1,0 +1,33 @@
+PiHat	Pinout	PinUsage
+=========================================================
+SDA	BCM2	Used for ADC reading and LED displays
+SCL	BCM3	Used for ADC reading and LED displays
+TXC	BCM14
+RXD	BCM15
+#4	GPCLK0
+#17	BCM17	FAN CONTROLLER (on/off)
+#18	PWM0
+#27	BCM27	FAN CONTROLLER (lowest value resistor)
+#22	BCM22	FAN CONTROLLER (middle value resistor)
+#23	BCM23	FAN CONTROLLER (highest value resistor)
+#24	BCM24
+#25	BCM25
+MOSI	BCM10
+MISO	BCM9
+CLK	BCM11
+CE0	BCM8
+CE1	BCM7
+#5	BCM5
+#6	BCM6
+#12	PWM0	PIN BRIGHT
+#13	PWM1
+#16	BCM16	PIN FANPRO
+#19	MISO
+#20	MOSI
+#21	SCLK
+
+
+PINBRIGHT=12
+PINFANPRO=16
+GPIOFAN=17,27,22,23
+
