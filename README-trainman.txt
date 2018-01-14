@@ -16,13 +16,13 @@ Trainman #1: Read stove and pipe temperatures using thermocouple amplifiers and 
 
 Trainman #2: Display stove, pipe and room temperatures on alphanumeric LED displays
 
-Trainman #3: Read and display room temperture from a 1-wire server and temperature sensor
+Trainman #3: Automatic fan speed control based on stove temperature
 
-Trainman #4: User control of the running program using buttons 
+Trainman #4: Fan profiles allow user control over automatic fan speed operation
 
-Trainman #5: Automatic fan speed control based on stove temperature
+Trainman #5: Read and display room temperture from a 1-wire server and temperature sensor
 
-Trainman #6: Fan profiles allow user control over automatic fan speed operation
+Trainman #6: User control of the running program using buttons 
 
 Trainman #7: Automatic air control based on stove and pipe temperature
 

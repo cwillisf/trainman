@@ -1,0 +1,47 @@
+ 
+Speed Control KB Electronics Model KBMS-13BV 3.0 Amps FLA 6.0 Amps LRA 120 VAC
+ 
+ R4 Speed ADJ has separate Switch (middle pins).   The POT resistance pin are the 3 on the edge.
+ 
+ Measured Resistance (looking down on 3 pins)
+ 
+ Between Center and Right little resistance 0.1 ohms
+ 
+ Original                Trim Left	Trim Right
+ 12:00 Off - 0.3 ohms    0.3 ohms	 0.3 ohms
+ 1:00 High - 0.3 ohms	 0.3 ohms	 0.3 ohms
+ 2:00 - 24.5 kohms	 0.3 ohms	 29.7 kohms
+ 3:00 - 51.6 kohms	 0.3 ohms	 76.0 kohms
+ 4:00 - 63.3 kohms	 0.3 ohms	 96.4 kohms
+ 5:00 - 69.3 kohms	 0.3 ohms	118.8 kohms
+ 6:00 - 77.1 kohms	 0.3 ohms 	141.9 kohms
+ 7:00 - 80.5 kohms	 0.3 ohms	157.0 kohms
+ 8:00 - 84.0 kohms	 0.3 ohms	172.0 kohms
+ 9:00 - 88.8 kohms	 0.3 ohms	191.9 kohms
+10:00 - 92.3 kohms        0.3 ohms	213.0 kohms
+ 
+ 
+ After playing with the trim pot.  the lowest the motor starts up with is a total resistance of 175 kohms
+ So the main speed pot will vary the resistance between 0.3 ohms and 175 kohms.
+ The highest factory resistance is 92 kohms and the motor will not start if > 175 kohms.   So 175 / 2 = or about 87K is a good highest resistor.
+ 
+ There is very little reduction in speed with a 1K resistor.  Thus this would be a good starting point for resistance.
+ 
+ Selection of Resistors for Wood Stove Blower Automation:
+ 
+Three resistors are wired in series, 12KOhms + 27KOhms + 47KOhms so shorting out different combinations of relays 2,3,4 allow the fan to be run at 8 different fan speeds plus off.  
+There is no amount of resistance that will shutoff the AC motor so the first relay switches the 120VAC power.
+0 = Relay not energized so resistor is active.  1 = Relay is energized so relay short cuts the resistor removing its effect from the series.
+The resistors selected are roughly 2x multiples of each other.  I selected resistances to get my desired minimum fan speed.  Different motors and situation will likely need different resistor selection.
+
+FanSpeed Relay    Resistances	  Total  Speed
+=====================================================
+  0      0,0,0,0  Blower Motor Off         Off
+  1      1,0,0,0  12K + 27K + 47K  = 86K  Slowest
+  2      1,1,0,0   0K + 27K + 47K  = 74K    ^
+  3      1,0,1,0  12K +  0K + 47K  = 59K    |
+  4      1,1,1,0   0K +  0K + 47K  = 47K    |
+  5      1,0,0,1  12K + 27K +  0K  = 39K    |
+  6      1,1,0,1   0K + 27K +  0K  = 27K    |
+  7      1,0,1,1  12K +  0K +  0K  = 12K    V
+  8      1,1,1,1   0  +  0K +  0K  =  0K  Maximum
