@@ -7,7 +7,7 @@ Trainman is a wood stove automation project that is both open source as well as 
 
 PROJECT PHASES:
 
-The trainman project is broken down into eight phases with each sucessive phase adding more features and complexity to the hardware and software.   This way builder/maker can run the phase needed, see how it works and then progress to the next phase as desired.  Currently development is at phase #7.  This project is a work in progress and there is no schedule on when it will be completed.
+The trainman project is broken down into eight phases with each sucessive phase adding more features and complexity to the hardware and software.   This way builder/maker can run the phase needed, see how it works and then progress to the next phase as desired.  Currently development is at phase #5 & 6.  This project is a work in progress and there is no schedule on when it will be completed.
 
 
 CURRENT PHASES:
@@ -16,17 +16,15 @@ Trainman #1: Read stove and pipe temperatures using thermocouple amplifiers and 
 
 Trainman #2: Display stove, pipe and room temperatures on alphanumeric LED displays
 
-Trainman #3: Automatic fan speed control based on stove temperature
+Trainman #3: Automatic fan speed control based on stove temperature with fan profiles
 
-Trainman #4: Fan profiles allow user control over automatic fan speed operation
+Trainman #4: Read and display room temperture from a 1-wire server and temperature sensor
 
-Trainman #5: Read and display room temperture from a 1-wire server and temperature sensor
+Trainman #5: User control of the running program using button menu system
 
-Trainman #6: User control of the running program using buttons 
+Trainman #6: Automatic air control based on stove and pipe temperature
 
-Trainman #7: Automatic air control based on stove and pipe temperature
-
-Trainman #8: Air control set points allow user control over automatic air control
+Trainman #7: Air control set points allow user control over automatic air control
 
 
 DISCLAIMERS:

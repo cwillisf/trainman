@@ -1,7 +1,7 @@
 #! /usr/bin/python -u
 #
 # Trainman PYTHON script to automate Wood Stove operation
-# Copyright (c) 2018 Yodagami
+# Copyright (c) 2016 Yodagami
 # License: GPLV3 GNU Public License Version 3
 #
 # "You don't get it do you, I built this place. Down here I make the rules. Down here I make the threats. Down here... I'm God."
@@ -13,6 +13,7 @@
 # Features:
 #	1) Monitor wood stove temperatures using up to 3 K-Type Grounded or Ungrounded thermocouples.  
 #	2) Display temperatures and other metrics on alphanumeric LED displays that are readable from across the room.
+#	3) Automatically Control a modified (8 speed + off) wood stove blower fan based on stove temperature.
 #
 # Hardware:
 #	RaspberryPi Model 3B
@@ -22,12 +23,13 @@
 #	2xAdafruit #1911 Quad Alphanumeric Display - Red 0.54" Digits w/ I2C Backpack
 #	2xAdafruit #2158 Quad Alphanumeric Display - Yellow 0.54" Digits w/ I2C Backpack
 #	2xAdafruit #2160 Quad Alphanumeric Display - Pure Green 0.54" Digits w/ I2C Backpack
+#	1xSainSmart #20-018-901 4 Channel 5V Solid State Relay Module Board OMRON 240VAC 2A output with resistive fuse phototriac.
 #
 # OperatingSystem:
 #	Raspian Jessie Lite 2017/07/05
 # 
 # Install:
-#	See README-trainman2.txt
+#	see README-trainman3.txt
 
 ####################################
 # Site Configuration
@@ -35,7 +37,6 @@
 
 # DisplayAddr: List of LED display addresses used in the system.  
 # List contains i2c hexadecimal addressses of the displays that can be discovered using command "i2cdetect -y 1"
-# Text is set in function set_display_text() so modify that function to match the displays
 # In example below 0x70=Red,0x71=Yellow,0x72=Green,0x73=Blue,0x75=White,0x77=Yellow-Green
 displayaddr=[0x70,0x71,0x72,0x73,0x75,0x77]
 # Another example 0x70=Red1,0x71=Yellow2,0x72=Green3,0x74=Red4,0x75=Yellow5,0x76=Green6
@@ -46,18 +47,70 @@ displayaddr=[0x70,0x71,0x72,0x73,0x75,0x77]
 bright=1
 
 # BrightProfiles: You might notice that LED displays have different light output depending on the color of the display.
-# The brightprofile allows you to even out the light output between displays at a given level of system brightness.
+# The brightprofile allows you to somewhat even out the light output between displays at a given level of system brightness.
 # Each brightness profile is a list of hardware brightnesses that set the brightness of individual LED displays in the system.
 # Each element in this list is a list of D brightnesses where D is the number of Displays in the system.
 # The first element should be a list of -1 values.  (e.g. [-1,-1,1] for a system with 3 displays. 
 # Please note that -1 is not a valid hardware brightness but it signifies that the LED display should be turned completely off
-# (by writing spaces to the display).  Otherwise valid brightness values go from 0 (dim) to 15 (bright).
+# (by writing spaces to the display).
+# Otherwise valid brightness values go from 0 (dim) to 15 (bright).
 brightprofiles=[[-1,-1,-1,-1,-1,-1],\
-                [0,0,0,1,2,7],\
-                [2,2,2,3,5,15],\
-                [4,4,4,7,9,15],\
-                [9,9,9,15,15,15],\
+                [0,0,0,0,0,3],\
+                [2,2,2,2,2,9],\
+                [4,4,4,4,4,15],\
+                [9,9,9,9,9,15],\
 		[15,15,15,15,15,15]]
+
+# PINFANPRO: BCM GPIO pin number that cycles the fan profile setting.  Push of the button cycles to the next fan profile.
+# This GPIO pin is connected through the switch to GND and setup as an interrupt.  This pin is configured to INPUT mode.
+PINFANPRO=24
+
+# GPIOFan: List of BCM GPIO pin numbers used to control blower fan. These pins are configured to OUTPUT mode.
+# All 4 of the GPIO pins are wired to control 4 SainSmart solid state relays. 
+# First number in the list is the gpiopin that controls the on/off relay that CONNECTS or CUTS 120VAC power to the fan motor
+# Second number in the list is the gpiopin that controls the relay that shorts the lowest value resistor (12KOhms)
+# Third number in the list is the gpiopin that controls the relay that shorts the middle value resistor (27KOhms)
+# Forth number in the list is the gpiopin that controls the relay that shorts the highest value resistor (47KOhms)
+# The resistors on relays 2,3,4 basically replace the main potentiometer and trim pot from the motor speed control.
+# Three resistors are wired in series, 12KOhms + 27KOhms + 47KOhms so shorting out different combinations of relays 2,3,4 
+# allow the fan to be run at 8 different fan speeds plus off.  
+# There is no amount of resistance that will shutoff the AC motor so the first relay switches the 120VAC power.
+gpiofan=[17,27,22,23]
+
+# FanSpeeds: Defines how many fan speeds there are and how to set the Raspberry Pi GPIO Pins for the fan to obtain them.
+# Its is a list of 4 values lists. 0=gpiopin off (low), 1=gpiopin on (high) corresponding to gpiofan above which has 4 values.
+# Notice there are 9 fanspeeds elements
+# The first element [0,0,0,0] defines how to shut the motor off.
+# The 2nd element [1,0,0,0] defines how to run the fan at its lowest speed (motor on but no resistors shorted)
+# The Last element [1,1,1,1] defines how to run the fan at its highest speed (motor on and all resistors shorted)
+fanspeeds=[[0,0,0,0],[1,0,0,0],[1,1,0,0],[1,0,1,0],[1,1,1,0],[1,0,0,1],[1,1,0,1],[1,0,1,1],[1,1,1,1]]
+
+# FanProfiles: A list of profiles that define stovetop temperature versus speed of the blower fan.
+# Each element in this is a fanprofile which is a list of 9 temperature values that determine fan speed at a given temperature.
+# The 9 temperatures correspond to the 9 different fanspeeds defined by the fanspeeds list above
+# Notice that the temperature values are sorted in ascending order
+# First number = Temp to turn fan off, Second = Temp to set fanspeed to 1 (slowest), Last = Temp to set fanspeed to 8 (fastest)
+# The first fan profile (example: [525,550,575,600,625,650,675,700,725]) specifies quiet fan operation by waiting
+# until the stove is really hot before turning on, and only going full speed when stove is getting really hot at 725F
+#
+# The last fan profile specifies aggressive fan operation by turning on at a low reasonable temperature and going
+# full speed at mid level temperatures.
+#
+fanprofiles=[[525,550,575,600,625,650,675,700,725],\
+             [500,525,550,575,600,625,650,675,700],\
+             [480,500,525,550,575,600,625,650,675],\
+             [460,480,500,525,550,575,600,625,650],\
+             [440,460,480,500,525,550,575,600,625],\
+             [420,440,460,480,500,525,550,575,600],\
+             [400,420,440,460,480,500,525,550,575],\
+             [380,400,420,440,460,480,500,525,550],\
+             [360,380,400,420,440,460,480,500,525],\
+             [340,360,380,400,420,440,460,480,500]]
+
+# FanPro: This is an index into the fanprofiles which specifies which fanprofile to use to set the blower fan speed.
+# (example: 4=[440,460,480,500,525,550,575,600,625]).  
+# The initial fanpro setting seen below can be modified by button presses later on in the program.
+fanpro=4
 
 # ADCGains: A list of gains for each digitized channel on the Analog Digital Converter.
 # There should be one comma separated number for each digitized thermocouple in the system.
@@ -76,7 +129,6 @@ sleeptime=1.0	# Number of seconds to wait between iterations of the main loop
 
 # Set display brightness given a display object and a brightness value from -1 to 15
 # -1 = off, 0 to 15 and use the set_brightness method of the object to set hardware brightness to 0 to 15.
-# REDO THIS COMMENT FOR BRIGHTPROFILE
 def set_display_brightness(bright):
     brightlist=brightprofiles[bright]
     for d in range(len(displaylist)):
@@ -90,9 +142,9 @@ def set_display_text():
     messagelist[0] = str(stovetemp) + "F"
     messagelist[1] = str(pipetemp) + "F"
     messagelist[2] = str(roomtemp) + "F"
-    messagelist[3] = "BRI" + str(bright)
-    messagelist[4] = "WHGT"
-    messagelist[5] = "YGRN"
+    messagelist[3] = "FAN"+str(fanspeed)
+    messagelist[4] = "FPR"+str(fanpro)
+    messagelist[5] = "BRI"+str(bright)
 
     # Blank the displays if hardware brightness is -1, otherwise display desired values
     brightlist=brightprofiles[bright]
@@ -116,6 +168,12 @@ def set_display_text():
         except IOError:
             print "IOERROR"
 
+# Set speed of blower fan by setting gpiofan pins low/high depending on fanspeed variable
+def set_fan_speed(fanspeed):
+    print "Setting fanspeed to",fanspeed,fanspeeds[fanspeed]
+    for p in range(len(gpiofan)):
+	GPIO.output(gpiofan[p],fanspeeds[fanspeed][p])
+
 ####################################
 # Interrupt Handlers
 ####################################
@@ -135,14 +193,30 @@ def signal_handler(signal, frame):
         except IOError:
             print "IOERROR"
 
+    # Turn off blower fan
+    set_fan_speed(0)
+
+    # Clean up GPIO pins
+    GPIO.cleanup()
+
     print ("Done, Exiting")
     quit()
     sys.exit(0)
+
+# Setup handling of Fan Profile Button 
+def fanprofile_handler(channel):
+    global fanpro			# Global because we modify in this handler
+    if GPIO.input(PINFANPRO) == 0:	# Make sure PINFAN actually grounded (caller bug)
+        fanpro += 1				# Increase fanpro by 1
+        fanpro = fanpro % len(fanprofiles)	# Cycle fanpro back to zero if needed
+        print "setting fanpro to",fanpro
+        set_display_text()			# Immediately set the display text
 
 ####################################
 # Initialize variables
 ####################################
 x = 0
+fanspeed = 0
 displaylist=[]
 messagelist=[]
 
@@ -152,6 +226,8 @@ messagelist=[]
 # Import python libraries
 import time			# Required for sleep
 import signal, sys		# Required for interrupt handler
+import RPi.GPIO as GPIO 	# Required to control RaspberryPI GPIO pins
+
 
 # Import Adafruit modules that drive the hardware
 import Adafruit_ADS1x15				# Required for ADS1x15 Analog to Digital Converter
@@ -178,10 +254,26 @@ for d in range(len(displaylist)):
 set_display_brightness(bright)
 
 ####################################
+# Initialize GPIO boards and pins
+####################################
+# Initialize GPIO board to BCM mode where pin numbers defined by Broadcom SOC Channel
+# You can set this to GPIO.BOARD mode but then you will have to define pins according to pi header (e.g. 1 to 40)
+GPIO.setmode(GPIO.BCM)
+
+# Initialize GPIO fan pins to output mode
+for p in range(len(gpiofan)):
+    GPIO.setup(gpiofan[p], GPIO.OUT)
+
+# Initialize GPIO brightness button to input mode with pull up resistor active
+GPIO.setup(PINFANPRO,GPIO.IN,pull_up_down=GPIO.PUD_UP)
+
+####################################
 # Install signal and event handlers
 ####################################
 signal.signal(signal.SIGINT, signal_handler)    # Handle keyboard interrupt
 signal.signal(signal.SIGTERM, signal_handler)   # Handle kill aka sigterm
+GPIO.add_event_detect(PINFANPRO, GPIO.FALLING, callback=fanprofile_handler, bouncetime=200)	# Handle Fan Profile button
+
 
 ####################################
 ####################################
@@ -225,10 +317,23 @@ while True:
     roomtemp  = tempf[2]
 
     # Print variables. + concatination and str() to gets rid of extra spaces after = symbols
-    print "stovetemp="+str(stovetemp)+" pipetemp="+str(pipetemp)+" roomtemp="+str(roomtemp)+" bright="+str(bright)
+    print "stovetemp="+str(stovetemp)+" pipetemp="+str(pipetemp)+" roomtemp="+str(roomtemp)+" fanspeed="+str(fanspeed)+" fanpro="+str(fanpro)+" bright="+str(bright)
 
     # Write text to the LED displays
     set_display_text()
+
+    # Increase or Decrease fan speed depending on stovetop temperature
+    fanprofile=fanprofiles[fanpro]
+    maxfan=len(fanprofile)-1
+
+    if fanspeed < maxfan and stovetemp >= fanprofile[fanspeed+1]:
+        fanspeed += 1
+	print 'Increasing Fan To',fanspeed
+	set_fan_speed(fanspeed)
+    elif fanspeed > 0 and stovetemp <= fanprofile[fanspeed-1]:
+        fanspeed -= 1
+	print 'Decreasing Fan To',fanspeed
+	set_fan_speed(fanspeed)
 
     # Pause for sleeptime seconds.
     time.sleep(sleeptime)

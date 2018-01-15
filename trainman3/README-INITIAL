@@ -1,0 +1,57 @@
+ 
+TRAINMAN3
+
+Phase III of this project is adding in Automatic Fan Speed control. 
+
+WARNING: Attempting this will void your blower fan warranty, obliterate its UL listing and is electrically dangerous because it involves modifications to wires that carry 120 Volts AC.   If you don't know how safely deal with 120VAC just don't do it.  Remember to unplug the blower fan and keep it unplugged while messing around with an open blower fan.  Using GFI outlet while messing around with it is a very good idea.
+
+Being able to have the system automatically turn on and vary the blower fan has been really great.  I don't have to stop what I am doing and turn on the fan when the stove gets up to temperature.    If it gets really hot the the blower will go on full speed and let me know that the air control might need to be quenched off a bit.    When the burn is done, the speed is slowed down and then turned off.  I'm not wasting power running a fan that has been forgotten about.   I'm not blowing air off a cold stove creating a draft in the room.  Minimal power, Minimal noise, Minimal fuss.
+
+My stove is a Pacific Energy Classic.  The blower is nice and quiet on moderate speed, they cost about 300$.    There is a simple On/Off switch on the side with the speed control potentiometer and the stove comes with a snap switch that doesn't do what I want when I want.    Im not a EE so I haven't studied anything remotely close to a variable speed AC fan controller so when I busted open the blower in the back I was surprised to find this ...
+
+​​​​Speed Control KB Electronics Model KBMS-13BV
+http://www.kb-controls.com/product.sc?productId=158
+
+Inside the plastic box is a small circuit board which has a bunch of compoenents soldered onto it as well as the and the large speed control potentiomter with a small trim speed potentiometer.  
+
+At first I thought I was done ... there is no easy way to automatically vary the fan speed.   After a bit of reasearch I discovered that the circuit board is a DIAC/TRIAC (Thyristor) circuit and they have been around for quite some time.   Instead of the potentiometer reducing the voltage to the fan motor, browning it out (which would be bad), the Thyristor chops the AC waveform so peak voltages are maintained but the time that the motor sees voltage is reduced.
+
+Basically, the fan speed is controlled by the triggering of the TRIAC.   The potentiometer varies the resistance that controls the triggering.   Higher resistance slows the fan.   Lower resistance speeds up the fan.
+
+Awesome!  Wanting to do more experimentation but not wanting to wreck what I have, I bought a replacement speed control and using a soldering iron and solder vacumm I removed both the big potentiometer and the small blue trim pot and in thier place attached red+orange lead wires.   I could then (with a great deal of care) play around with various resistors and vary the speed of the fan.  
+
+That's great but how does one automatically vary the resistance via a Raspberry Pi?    It might be possible to integrate a digital potentiometer into the circuit but I would still have to deal with turning the fan on/off, so instead I chose a 4 channel solid state relay board for this purpose.
+
+https://www.sainsmart.com/products/4-channel-5v-solid-state-relay-module
+
+This board is nice because it is optically isolated 5Volt active high which is perfect for integrating 120VAC with the Pi.  Also the current capacity of the solid state relay (0.1 to 2 AMP) will handle the limited amperage of the blower fan.   So I used one relay to turn the fan on/off and the other 3 to vary the resistances to the speed controller.
+
+Which resistances to use? 
+
+Simple answer. 
+- Figure out the resitance of the slowest desired fan speed (For me it was about 90K Ohms).
+- Select 3 available resistors that add up to this resistance that are roughly multiples of 1x,2x,4x (For me these ended up being 12K,27K,47K).  When wired in series the resistances are additive: 12K + 27K + 47K = 86KOhms
+
+Once that is figured out, 3 sainsmart relays are used to individually short out these 3 separate resistors.  When a resistor is shorted its resitance is removed from the series.  Using various combinations of On/Off for the relays allows for 8 different resistance and 8 different fan speeds when the on/off relay is triggered on.    Its easier to figure this out looking at the following table.   The first relay simply turns the 120 VAC power to the motor on/off.   Remember! don't stick your fingers in it when plugged in.  ZAP!
+
+FanSpeed Relay    Resistances     Total  Speed
+=====================================================
+  0      0,0,0,0  Blower Motor Off              Off
+  1      1,0,0,0  12K + 27K + 47K  = 86K  Slowest
+  2      1,1,0,0   0K + 27K + 47K  = 74K    ^
+  3      1,0,1,0  12K +  0K + 47K  = 59K    |
+  4      1,1,1,0   0K +  0K + 47K  = 47K     |
+  5      1,0,0,1  12K + 27K +  0K  = 39K    |
+  6      1,1,0,1   0K + 27K +  0K  = 27K     |
+  7      1,0,1,1  12K +  0K +  0K  = 12K    V
+  8      1,1,1,1   0  +  0K +  0K  =  0K    Maximum
+
+I was kind of stunned to see it actually work in the end.  I cleaned up the install by replacing the 2 way On/Of switch with a 3 way switch that turns the fan Manual/Off/Auto.  
+The wiring is basically:   120VAC Hot/BlackWire ---> Switch ---> Speed Control ----> Fan Motor ----> 120VAC Neutral/WhiteWire.  
+The Manual versus Auto setting selects which speed control is active.  (Manual for the original Speed Controller, Auto goes to the Sainsmart+Hacked Speed Controller).
+
+4 GPIO pins on the Pi control the SainSmart relayboard.  I feed it 5VDC as well as GND so it uses a 6 wire harness to connect to a 6 pin terminal block on the trainman perma proto board.  
+
+I should have the trainman3.py code posted up soon. 
+
+https://github.com/yodagami/trainman/tree/master/trainman3
