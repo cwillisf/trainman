@@ -13,7 +13,7 @@
 # Features:
 #	1) Monitor wood stove temperatures using up to 3 K-Type Grounded or Ungrounded thermocouples.  
 #	2) Display temperatures and other metrics on alphanumeric LED displays that are readable from across the room.
-#	3) Automatically Control a modified (8 speed + off) wood stove blower fan based on stove temperature.
+#	3) Automatically Control a modified (8 speed + off) Pacific Energy wood stove blower fan according to stove temperature.
 #
 # Hardware:
 #	RaspberryPi Model 3B
@@ -24,12 +24,15 @@
 #	2xAdafruit #2158 Quad Alphanumeric Display - Yellow 0.54" Digits w/ I2C Backpack
 #	2xAdafruit #2160 Quad Alphanumeric Display - Pure Green 0.54" Digits w/ I2C Backpack
 #	1xSainSmart #20-018-901 4 Channel 5V Solid State Relay Module Board OMRON 240VAC 2A output with resistive fuse phototriac.
+#	1xEmbedded Data Systems OW-Server 1-wire to Ethernet Server
+#	1xEmbedded Data Systems OW-ENV-T DS18B20 Wall Mount Temperature Sensor
 #
 # OperatingSystem:
 #	Raspian Jessie Lite 2017/07/05
 # 
 # Install:
-#	see README-trainman3.txt
+#	sudo apt-get install python-pip
+#	sudo pip install pysnmp
 
 ####################################
 # Site Configuration
@@ -37,10 +40,8 @@
 
 # DisplayAddr: List of LED display addresses used in the system.  
 # List contains i2c hexadecimal addressses of the displays that can be discovered using command "i2cdetect -y 1"
-# In example below 0x70=Red,0x71=Yellow,0x72=Green,0x73=Blue,0x75=White,0x77=Yellow-Green
-displayaddr=[0x70,0x71,0x72,0x73,0x75,0x77]
-# Another example 0x70=Red1,0x71=Yellow2,0x72=Green3,0x74=Red4,0x75=Yellow5,0x76=Green6
-#displayaddr=[0x70,0x71,0x72,0x74,0x75,0x76]
+# In example below 0x70=Red-3VDC,0x71=Yellow-3VDC,0x72=Green-3VDC,0x74=Red-5VDC,0x75=Yellow-5VDC,0x76=Green-5VDC
+displayaddr=[0x70,0x71,0x72,0x74,0x75,0x76]
 
 # Bright: Initial starting brightness of LED Displays. 
 # This is an INDEX into brightprofiles (see below) that defines a list of hardware brightnesses.
@@ -53,17 +54,22 @@ bright=1
 # The first element should be a list of -1 values.  (e.g. [-1,-1,1] for a system with 3 displays. 
 # Please note that -1 is not a valid hardware brightness but it signifies that the LED display should be turned completely off
 # (by writing spaces to the display).
-# Otherwise valid brightness values go from 0 (dim) to 15 (bright).
+# In example below Red is boosted a bit, Blue is boosted moderately, Yellow-Green gets a huge boost and White is dimmed alot.
 brightprofiles=[[-1,-1,-1,-1,-1,-1],\
-                [0,0,0,0,0,3],\
-                [2,2,2,2,2,9],\
-                [4,4,4,4,4,15],\
-                [9,9,9,9,9,15],\
+                [0,0,0,0,0,0],\
+                [2,2,2,2,2,2],\
+                [4,4,4,4,4,4],\
+                [9,9,9,9,9,9],\
 		[15,15,15,15,15,15]]
+
+# PINBRIGHT: BCM GPIO pin number that cycles the display brightness setting.  Push of the button cycles to the next brightness profile.
+# This GPIO pin is connected through the switch to GND and setup as an interrupt.  This pin is configured to INPUT mode.
+PINBRIGHT=13
 
 # PINFANPRO: BCM GPIO pin number that cycles the fan profile setting.  Push of the button cycles to the next fan profile.
 # This GPIO pin is connected through the switch to GND and setup as an interrupt.  This pin is configured to INPUT mode.
-PINFANPRO=24
+PINFANPROUP=8
+PINFANPRODN=7
 
 # GPIOFan: List of BCM GPIO pin numbers used to control blower fan. These pins are configured to OUTPUT mode.
 # All 4 of the GPIO pins are wired to control 4 SainSmart solid state relays. 
@@ -90,8 +96,8 @@ fanspeeds=[[0,0,0,0],[1,0,0,0],[1,1,0,0],[1,0,1,0],[1,1,1,0],[1,0,0,1],[1,1,0,1]
 # The 9 temperatures correspond to the 9 different fanspeeds defined by the fanspeeds list above
 # Notice that the temperature values are sorted in ascending order
 # First number = Temp to turn fan off, Second = Temp to set fanspeed to 1 (slowest), Last = Temp to set fanspeed to 8 (fastest)
-# The first fan profile (example: [525,550,575,600,625,650,675,700,725]) specifies quiet fan operation by waiting
-# until the stove is really hot before turning on, and only going full speed when stove is getting really hot at 725F
+# The first fan profile (example: [640,660,680,700,720,740,760,780,800]) specifies quiet fan operation by waiting
+# until the stove is really hot before turning on, and only going full speed when stove is getting overheated at 800F
 #
 # The last fan profile specifies aggressive fan operation by turning on at a low reasonable temperature and going
 # full speed at mid level temperatures.
@@ -108,7 +114,7 @@ fanprofiles=[[525,550,575,600,625,650,675,700,725],\
              [340,360,380,400,420,440,460,480,500]]
 
 # FanPro: This is an index into the fanprofiles which specifies which fanprofile to use to set the blower fan speed.
-# (example: 4=[440,460,480,500,525,550,575,600,625]).  
+# (example: [550,575,600,625,650,675,700,725,750]).  
 # The initial fanpro setting seen below can be modified by button presses later on in the program.
 fanpro=4
 
@@ -123,12 +129,22 @@ adcgains=[1,1,1]
 
 sleeptime=1.0	# Number of seconds to wait between iterations of the main loop
 
+# OWS One Wire Server Configuration: In this phase of project adds a One-Wire temperature server and sensor.  
+# There are many ways to accomplish the acquistion of room temperature.  I just happen to have this One-Wire server
+# setup for other projects so might as well just use the existing temperature sensor and server.
+# This code supports a single temperature sensor but is easily adaptable for more if required.
+# Currently the room temperature is just displayed on the first Green LED display.  It could be used for thermostat control.
+owhost      = "192.168.1.17"			# IP address of the OWServer
+owoid       = "iso.3.6.1.4.1.31440.10.5.1.1.1"	# Use snmp walk to figure this out
+owcommunity = "public"				# Default is typically public
+
 ####################################
 # Normal Functions
 ####################################
 
 # Set display brightness given a display object and a brightness value from -1 to 15
 # -1 = off, 0 to 15 and use the set_brightness method of the object to set hardware brightness to 0 to 15.
+# REDO THIS COMMENT FOR BRIGHTPROFILE
 def set_display_brightness(bright):
     brightlist=brightprofiles[bright]
     for d in range(len(displaylist)):
@@ -139,9 +155,9 @@ def set_display_brightness(bright):
 # Set the text on the LED displays
 def set_display_text():
     # Set the displays to the desired string
-    messagelist[0] = str(stovetemp) + "F"
-    messagelist[1] = str(pipetemp) + "F"
-    messagelist[2] = str(roomtemp) + "F"
+    messagelist[0] = str(tempf[0]) + "F"
+    messagelist[1] = str(tempf[1]) + "F"
+    messagelist[2] = str(int(roomtemp*10)).rstrip() + "F"
     messagelist[3] = "FAN"+str(fanspeed)
     messagelist[4] = "FPR"+str(fanpro)
     messagelist[5] = "BRI"+str(bright)
@@ -174,6 +190,25 @@ def set_fan_speed(fanspeed):
     for p in range(len(gpiofan)):
 	GPIO.output(gpiofan[p],fanspeeds[fanspeed][p])
 
+# Get the temperature in farenheit from an OWServer given the OID and the Community name
+# Returns value in F rounded to 1 decimal place
+def get_owserver_tempf(owhost,oid,community):
+    print "Getting OWServer",owhost,oid
+
+    errorIndication, errorStatus, errorIndex, varBinds = next(
+	SNMP.getCmd(SNMP.SnmpEngine(), SNMP.CommunityData(community, mpModel=1),
+	SNMP.UdpTransportTarget((owhost, 161)), SNMP.ContextData(),
+        SNMP.ObjectType(SNMP.ObjectIdentity(oid)))
+    )
+    if errorIndication:
+        print(errorIndication)
+    elif (errorStatus):
+        print('%s at %s' % (errorStatus.prettyPrint(), errorIndex and varBinds[int(errorIndex) - 1][0] or '?'))
+    else:
+	tempc = float(varBinds[0][1])
+	tempf = round(tempc * 1.8 + 32,1)
+	return tempf
+	
 ####################################
 # Interrupt Handlers
 ####################################
@@ -203,12 +238,35 @@ def signal_handler(signal, frame):
     quit()
     sys.exit(0)
 
-# Setup handling of Fan Profile Button 
-def fanprofile_handler(channel):
+# Setup handling of Brightness Button
+def brightness_handler(channel):
+    global bright			# Global because we modify in this handler
+    if GPIO.input(PINBRIGHT) == 0:	# Make sure PINBRIGHT actually grounded (caller bug)
+        bright += 1				# Increase brightness by 1
+        bright = bright % len(brightprofiles)	# Cycle bright back to zero if needed
+        print "setting brightness to",bright
+        set_display_brightness(bright)		# Immediately set the display brightness
+        set_display_text()			# Immediately set the display text
+
+# Setup handling of Fan Profile Up Button 
+def fanprofileup_handler(channel):
     global fanpro			# Global because we modify in this handler
-    if GPIO.input(PINFANPRO) == 0:	# Make sure PINFAN actually grounded (caller bug)
+    global bright			# Global because we modify in this handler
+    if GPIO.input(PINFANPROUP) == 0:	# Make sure PINFANPROUP actually grounded (caller bug)
         fanpro += 1				# Increase fanpro by 1
-        fanpro = fanpro % len(fanprofiles)	# Cycle fanpro back to zero if needed
+        fanpro = min(fanpro,len(fanprofiles)-1)	# Set upper limit based on size of fanprofiles
+        bright = min(fanpro,1)			# Turn on display with bright=1
+        print "setting fanpro to",fanpro
+        set_display_text()			# Immediately set the display text
+
+# Setup handling of Fan Profile Down Button 
+def fanprofiledn_handler(channel):
+    global fanpro			# Global because we modify in this handler
+    global bright			# Global because we modify in this handler
+    if GPIO.input(PINFANPRODN) == 0:	# Make sure PINFANPRODN actually grounded (caller bug)
+        fanpro -= 1				# Decrease fanpro by 1
+        fanpro = max(fanpro,0)			# Set lower limit of 0
+        bright = cmp(fanpro,0)			# Turn off display if fanpro==0
         print "setting fanpro to",fanpro
         set_display_text()			# Immediately set the display text
 
@@ -227,7 +285,7 @@ messagelist=[]
 import time			# Required for sleep
 import signal, sys		# Required for interrupt handler
 import RPi.GPIO as GPIO 	# Required to control RaspberryPI GPIO pins
-
+import pysnmp.hlapi as SNMP	# Required for owserver 1-wire temperature sensors
 
 # Import Adafruit modules that drive the hardware
 import Adafruit_ADS1x15				# Required for ADS1x15 Analog to Digital Converter
@@ -265,14 +323,18 @@ for p in range(len(gpiofan)):
     GPIO.setup(gpiofan[p], GPIO.OUT)
 
 # Initialize GPIO brightness button to input mode with pull up resistor active
-GPIO.setup(PINFANPRO,GPIO.IN,pull_up_down=GPIO.PUD_UP)
+GPIO.setup(PINBRIGHT,GPIO.IN,pull_up_down=GPIO.PUD_UP)
+GPIO.setup(PINFANPROUP,GPIO.IN,pull_up_down=GPIO.PUD_UP)
+GPIO.setup(PINFANPRODN,GPIO.IN,pull_up_down=GPIO.PUD_UP)
 
 ####################################
 # Install signal and event handlers
 ####################################
 signal.signal(signal.SIGINT, signal_handler)    # Handle keyboard interrupt
 signal.signal(signal.SIGTERM, signal_handler)   # Handle kill aka sigterm
-GPIO.add_event_detect(PINFANPRO, GPIO.FALLING, callback=fanprofile_handler, bouncetime=200)	# Handle Fan Profile button
+GPIO.add_event_detect(PINBRIGHT,   GPIO.FALLING, callback=brightness_handler, bouncetime=200)	# Handle Brightness button
+GPIO.add_event_detect(PINFANPROUP, GPIO.FALLING, callback=fanprofileup_handler, bouncetime=200)	# Handle Fan Profile up button
+GPIO.add_event_detect(PINFANPRODN, GPIO.FALLING, callback=fanprofiledn_handler, bouncetime=200)	# Handle Fan Profile down button
 
 
 ####################################
@@ -314,7 +376,11 @@ while True:
     # Set easy to read variable from the tempf array
     stovetemp = tempf[0]
     pipetemp  = tempf[1]
-    roomtemp  = tempf[2]
+    #roomtemp  = tempf[2]
+
+    # Get roomtemp from owserver 1-wire temperature sensor every so often
+    if (x % 30) == 0:
+        roomtemp = get_owserver_tempf(owhost,owoid,owcommunity)
 
     # Print variables. + concatination and str() to gets rid of extra spaces after = symbols
     print "stovetemp="+str(stovetemp)+" pipetemp="+str(pipetemp)+" roomtemp="+str(roomtemp)+" fanspeed="+str(fanspeed)+" fanpro="+str(fanpro)+" bright="+str(bright)

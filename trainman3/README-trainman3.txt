@@ -28,7 +28,9 @@ https://www.sainsmart.com/products/4-channel-5v-solid-state-relay-module
 
 - Set of 6 Jumper wires to connect the Fan Controller to the PiHat.  I use a set of Male-Male and Female-Male 6 wire ribbon cable to create a long harness that can be easily plugged/unplugged.
 
-- Three-Way rocker switch On/Off/On with 6 terminals on the back to replace the simple 2-Way rocker On/Off switch.
+- Three-Way rocker switch On/Off/On with 6 terminals on the back to replace the simple 2-Way rocker On/Off switch.  The one that worked with my blower is KCD1 6A 250VAC/10A 125VAC On/Off/On Rectangular Rocker Switch 3 pin SPDT snap in type switch.
+https://www.aliexpress.com/item/10-Pcs-x-AC-6A-250-V-10A-125-V-3-Broches-SPDT-ON-OFF-ON/32770263931.html
+https://wholesaler.alibaba.com/product-detail/switch-rocker-dpdt-16a-250v-kcd1_60333960418.html 
 
 
 PROBLEM DESCRIPTION AND INVENTED SOLUTION:
