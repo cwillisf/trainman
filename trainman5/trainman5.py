@@ -31,6 +31,7 @@
 #	1xAdafruit #324 Stepper motor - NEMA-17 size - 200 steps/rev, 12V 350mA
 #	1xAdafruit #2348 DC & Stepper Motor Hat for Raspberry Pi - Mini Kit
 #	1xAdafruit #1184 Timing Belt GT2 Profile - 2mm pitch - 6mm wide 1164mm long
+#	1xUltibots #N17D NEMA 17 Damper - Astrosyn MY17RMDAMP
 #	1xOpenbuilds GT2-2M Timing Pulley - 30 Tooth
 #	1xOpenbuilds V-Slot 20x20 Linear Rail
 #	1xOpenbuilds Mini V Gantry Set
