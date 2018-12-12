@@ -20,11 +20,10 @@ Trainman #3: Automatic fan speed control based on stove temperature with fan pro
 
 Trainman #4: Read and display room temperture from a 1-wire server and temperature sensor
 
-Trainman #5: Automatic air control based on stove and pipe temperature
+Trainman #5: Automatic air control based on pipe temperature
 
-Trainman #6: User control of the running program using button menu system
+Trainman #6: Automatic air control based on stove and pipe temperature, Burn states, User control over automatic air control
 
-Trainman #7: Air control set points allow user control over automatic air control
 
 
 DISCLAIMERS:
