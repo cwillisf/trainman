@@ -47,6 +47,13 @@ channels = [AnalogIn(ads, x) for x in range(num_channels)]
 
 print('Starting Main Loop, press Ctrl-C to quit...')
 
+def get_voltage(channel):
+    voltage = channels[i].voltage
+    if voltage > 4.5:
+        # looks like the probe is disconnected
+        return None
+    return voltage
+
 def voltage_to_c(voltage):
     celsius = (voltage - bias_voltage) / mv_per_c
     return celsius
@@ -58,7 +65,7 @@ samples = [[] for i in range(num_channels)]
 nextReport = time.time() + reportInterval
 while True:
     for i in range(num_channels):
-        voltage = channels[i].voltage
+        voltage = get_voltage(i)
         if voltage is None:
             print("Warning: bad reading from probe " + str(i) + ". Is it disconnected?")
         else:
