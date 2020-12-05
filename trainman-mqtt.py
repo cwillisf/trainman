@@ -8,7 +8,9 @@
 ####################################
 # Import libraries and modules
 ####################################
-import time
+from collections import namedtuple, deque
+import datetime
+import math
 
 import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
@@ -16,6 +18,11 @@ from adafruit_ads1x15.analog_in import AnalogIn
 import board
 import busio
 import paho.mqtt.publish as publish
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from scipy.signal import butter, filtfilt, savgol_filter
 
 ####################################
 # Configuration
@@ -28,9 +35,9 @@ import paho.mqtt.publish as publish
 # OTHERWISE, leave gains at 1 to allow the ADC to digitize voltages from 0 to 4.096VDC (K-Thermocouple reading up to 1056F)
 # This should be enough temperature range for the top of a wood stove or the surface of a double wall chimney pipe.
 # Using other gain values (e.g. 2,4,8,16) will likely overdrive the ADC when digitizing a K-Thermocouple amp.
-adcgain = 2/3
+adcgain = 1
 num_channels = 1
-reportInterval = 30  # seconds
+reportInterval = datetime.timedelta(seconds=30)
 bias_voltage = 1.3  # Adafruit says 1.25
 mv_per_c = 0.0025  # Adafruit says 0.005
 
@@ -39,8 +46,10 @@ mv_per_c = 0.0025  # Adafruit says 0.005
 ####################################
 
 i2c = busio.I2C(board.SCL, board.SDA)
-ads = ADS.ADS1115(i2c, gain=adcgain)
 
+# for me there's a significant amount of ~2Hz noise on this signal
+# at data_rate=128 the magnitude of the noise increases dramatically
+ads = ADS.ADS1115(i2c, gain=adcgain, data_rate=32)
 channels = [AnalogIn(ads, x) for x in range(num_channels)]
 
 ####################################
@@ -49,11 +58,11 @@ channels = [AnalogIn(ads, x) for x in range(num_channels)]
 ####################################
 ####################################
 
-print('Starting Main Loop, press Ctrl-C to quit...')
+print("Starting Main Loop, press Ctrl-C to quit...")
 
 
 def get_voltage(channel):
-    voltage = channels[i].voltage
+    voltage = channels[channel].voltage
     if voltage > 4.5:
         # looks like the probe is disconnected
         return None
@@ -68,30 +77,84 @@ def voltage_to_c(voltage):
 def c_to_f(celsius):
     return celsius * 9 / 5 + 32
 
+def find_first(predicate, list, default=None):
+    return next((index for index,value in enumerate(list) if predicate(value)), default)
 
-samples = [[] for i in range(num_channels)]
-nextReport = time.time() + reportInterval
-while True:
+def trimOldSamples(channelData):
+    cutoff = datetime.datetime.now() - datetime.timedelta(minutes=5)
     for i in range(num_channels):
-        voltage = get_voltage(i)
-        if voltage is None:
-            print("Warning: bad reading from probe " +
-                  str(i) + ". Is it disconnected?")
-        else:
-            samples[i].append(voltage)
-    if time.time() > nextReport:
-        count = len(samples[0])
-        if count > 0:
-            averages_v = [sum(x)/len(x) for x in samples]
-            averages_c = [voltage_to_c(x) for x in averages_v]
-            averages_f = [c_to_f(x) for x in averages_c]
-            print(str(count) + ": " + str(averages_v) + "V => " +
-                  str(averages_c) + "C => " + str(averages_f) + "F")
+        thisChannelData = channelData[i]
+        oldCount = len(thisChannelData.times)
+        index = find_first(lambda x: x > cutoff, thisChannelData.times)
+        if index != None:
+            del thisChannelData.times[:index]
+            del thisChannelData.voltages[:index]
+        newCount = len(thisChannelData.times)
+        print("Removed", oldCount - newCount, "samples")
+
+def butter_lowpass(cutoff, fs, order=5):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return b, a
+
+def butter_lowpass_filter(data, cutoff, fs, order=5):
+    b, a = butter_lowpass(cutoff, fs, order=order)
+    y = filtfilt(b, a, data)
+    return y
+
+def main():
+    ChannelData = namedtuple('ChannelData', ['times', 'voltages'])
+
+    # channelData is an array of:
+    #   a tuple of:
+    #     an array of timestamps (use 'datetime64[ns]')
+    #     an array of temperatures (use np.float32)
+    channelData = [ChannelData([], []) for x in range(num_channels)]
+    nextReport = datetime.datetime.now() + reportInterval
+    while True:
+        for i in range(num_channels):
+            voltage = get_voltage(i)
+            if voltage is None:
+                print("Warning: bad reading from probe " + str(i) + ". Is it disconnected?")
+            else:
+                channelData[i].times.append(datetime.datetime.now())
+                channelData[i].voltages.append(voltage)
+        if datetime.datetime.now() > nextReport:
+            #print("Processing samples: ", len(channelData[0].times))
+            trimOldSamples(channelData)
             for i in range(num_channels):
+                npChannelTimes = np.array(
+                    channelData[i].times, dtype='datetime64[ns]')
+                df = pd.DataFrame({
+                    "raw": voltage_to_c(np.array(channelData[i].voltages, dtype=np.float32))
+                }, index=pd.DatetimeIndex(npChannelTimes))
+                df = df.resample('125ms').bfill()
+                #samples_per_second = ads.data_rate
+                samples_per_second = 8
+                window_deriv = 3 * samples_per_second
+                #window_deriv = reportInterval.seconds * samples_per_second * 2 / 3
+                window_deriv = math.floor(window_deriv / 2) * 2 + 1
+                df['smooth'] = butter_lowpass_filter(df.raw, 0.25, 8)
+                df['derivative'] = savgol_filter(df.smooth, window_deriv, 3, deriv=1)
+                df.plot()
+                plt.savefig('plot.svg')
+                plt.clf()
+                plt.cla()
+                plt.close('all')
+                lookback_temp = 5
                 try:
-                    publish.single("trainman/" + str(i) + "/temperature",
-                                   round(averages_c[i], 2), hostname="192.168.1.2")
+                    messages = [
+                        ("trainman/" + str(i) + "/temperature", np.average(df.smooth[-1])),
+                        ("trainman/" + str(i) + "/derivative", np.average(df.derivative[-1])),
+                    ]
+                    print(i, len(df.smooth), messages)
+                    messages = [(m[0], str(round(m[1], 2))) for m in messages]
+                    publish.multiple(messages, hostname="192.168.1.2")
                 except OSError:
                     print("Error publishing to MQTT. Skipping.")
-            samples = [[] for i in range(num_channels)]
-            nextReport = time.time() + reportInterval
+            nextReport = datetime.datetime.now() + reportInterval
+
+
+if __name__ == "__main__":
+    main()
