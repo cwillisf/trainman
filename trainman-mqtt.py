@@ -53,7 +53,7 @@ print('Starting Main Loop, press Ctrl-C to quit...')
 
 
 def get_voltage(channel):
-    voltage = channels[i].voltage
+    voltage = channels[channel].voltage
     if voltage > 4.5:
         # looks like the probe is disconnected
         return None
@@ -68,30 +68,33 @@ def voltage_to_c(voltage):
 def c_to_f(celsius):
     return celsius * 9 / 5 + 32
 
+def main():
+    samples = [[] for i in range(num_channels)]
+    nextReport = time.time() + reportInterval
+    while True:
+        for i in range(num_channels):
+            voltage = get_voltage(i)
+            if voltage is None:
+                print("Warning: bad reading from probe " +
+                    str(i) + ". Is it disconnected?")
+            else:
+                samples[i].append(voltage)
+        if time.time() > nextReport:
+            count = len(samples[0])
+            if count > 0:
+                averages_v = [sum(x)/len(x) for x in samples]
+                averages_c = [voltage_to_c(x) for x in averages_v]
+                averages_f = [c_to_f(x) for x in averages_c]
+                print(str(count) + ": " + str(averages_v) + "V => " +
+                    str(averages_c) + "C => " + str(averages_f) + "F")
+                for i in range(num_channels):
+                    try:
+                        publish.single("trainman/" + str(i) + "/temperature",
+                                    round(averages_c[i], 2), hostname="192.168.1.2")
+                    except OSError:
+                        print("Error publishing to MQTT. Skipping.")
+                samples = [[] for i in range(num_channels)]
+                nextReport = time.time() + reportInterval
 
-samples = [[] for i in range(num_channels)]
-nextReport = time.time() + reportInterval
-while True:
-    for i in range(num_channels):
-        voltage = get_voltage(i)
-        if voltage is None:
-            print("Warning: bad reading from probe " +
-                  str(i) + ". Is it disconnected?")
-        else:
-            samples[i].append(voltage)
-    if time.time() > nextReport:
-        count = len(samples[0])
-        if count > 0:
-            averages_v = [sum(x)/len(x) for x in samples]
-            averages_c = [voltage_to_c(x) for x in averages_v]
-            averages_f = [c_to_f(x) for x in averages_c]
-            print(str(count) + ": " + str(averages_v) + "V => " +
-                  str(averages_c) + "C => " + str(averages_f) + "F")
-            for i in range(num_channels):
-                try:
-                    publish.single("trainman/" + str(i) + "/temperature",
-                                   round(averages_c[i], 2), hostname="192.168.1.2")
-                except OSError:
-                    print("Error publishing to MQTT. Skipping.")
-            samples = [[] for i in range(num_channels)]
-            nextReport = time.time() + reportInterval
+if __name__ == "__main__":
+    main()
