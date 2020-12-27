@@ -8,6 +8,7 @@
 ####################################
 # Import libraries and modules
 ####################################
+import queue
 import threading
 import time
 
@@ -62,22 +63,6 @@ def c_to_f(celsius):
     return celsius * 9 / 5 + 32
 
 
-def handle_samples(samples):
-    for i in range(num_channels):
-        count = len(samples[i])
-        if count > 0:
-            averages_v = [sum(x)/len(x) for x in samples]
-            averages_c = [voltage_to_c(x) for x in averages_v]
-            averages_f = [c_to_f(x) for x in averages_c]
-            print(str(count) + ": " + str(averages_v) + "V => " +
-                str(averages_c) + "C => " + str(averages_f) + "F")
-            for i in range(num_channels):
-                try:
-                    publish.single("trainman/" + str(i) + "/temperature",
-                                round(averages_c[i], 2), hostname="192.168.1.2")
-                except OSError:
-                    print("Error publishing to MQTT. Skipping.")
-
 class SampleCollector(threading.Thread):
     """Samples all channels in one thread and delivers in batches to another thread"""
 
@@ -115,17 +100,46 @@ class SampleCollector(threading.Thread):
                     with self._sample_lock:
                         self._samples[i].append(voltage)
 
+class SampleProcessor(threading.Thread):
+    """Processes and publishes a batch of samples"""
+
+    def __init__(self):
+        super(SampleProcessor, self).__init__()
+        self.daemon = True
+        self._sampleQueue = queue.Queue()
+
+    def process(self, samples):
+        self._sampleQueue.put(samples)
+
+    def run(self):
+        while True:
+            samples = self._sampleQueue.get()
+            for i in range(num_channels):
+                count = len(samples[i])
+                if count > 0:
+                    averages_v = [sum(x)/len(x) for x in samples]
+                    averages_c = [voltage_to_c(x) for x in averages_v]
+                    averages_f = [c_to_f(x) for x in averages_c]
+                    print(str(count) + ": " + str(averages_v) + "V => " +
+                        str(averages_c) + "C => " + str(averages_f) + "F")
+                    for i in range(num_channels):
+                        try:
+                            publish.single("trainman/" + str(i) + "/temperature",
+                                        round(averages_c[i], 2), hostname="192.168.1.2")
+                        except OSError:
+                            print("Error publishing to MQTT. Skipping.")
+
 def main():
     sampler = SampleCollector(num_channels)
     sampler.start()
 
-    nextReport = time.time() + reportInterval
+    processor = SampleProcessor()
+    processor.start()
+
     while True:
-        time.sleep(1)
-        if time.time() > nextReport:
-            samples = sampler.flush_samples()
-            nextReport = time.time() + reportInterval
-            handle_samples(samples)
+        time.sleep(reportInterval)
+        samples = sampler.flush_samples()
+        processor.process(samples)
 
 if __name__ == "__main__":
     main()
