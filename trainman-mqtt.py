@@ -35,7 +35,7 @@ import paho.mqtt.publish as publish
 adcgain = 2/3
 num_channels = 1
 reportInterval = 30  # seconds
-max_trend_samples = 10 # trend analysis will be over this many report intervals
+max_trend_samples = 10  # trend analysis will be over this many report intervals
 bias_voltage = 1.3  # Adafruit says 1.25
 mv_per_c = 0.0025  # Adafruit says 0.005
 
@@ -102,10 +102,11 @@ class SampleCollector(threading.Thread):
                 )
                 if sample[1] is None:
                     print("Warning: bad reading from probe " +
-                        str(i) + ". Is it disconnected?")
+                          str(i) + ". Is it disconnected?")
                 else:
                     with self._sample_lock:
                         self._samples[i].append(sample)
+
 
 class SampleProcessor(threading.Thread):
     """Processes and publishes a batch of samples"""
@@ -115,7 +116,8 @@ class SampleProcessor(threading.Thread):
         self.daemon = True
         self._num_channels = num_channels
         self._sampleQueue = queue.SimpleQueue()
-        self._trendSamples = [collections.deque() for i in range(self._num_channels)]
+        self._trendSamples = [collections.deque()
+                              for i in range(self._num_channels)]
 
     def process(self, samples):
         self._sampleQueue.put(samples)
@@ -126,15 +128,16 @@ class SampleProcessor(threading.Thread):
             samples = self._sampleQueue.get()
             for i in range(self._num_channels):
                 channel_samples = samples[i]
-                results = self._process_channel(channel_samples, self._trendSamples[i])
+                results = self._process_channel(
+                    channel_samples, self._trendSamples[i])
                 print(i, results)
                 msgs.append((
                     "trainman/" + str(i) + "/temperature",
                     round(results['temp_c'], 2)
                 ))
                 msgs.append((
-                            "trainman/" + str(i) + "/temperature_trend",
-                            round(results['trend_c'], 2)
+                    "trainman/" + str(i) + "/temperature_trend",
+                    round(results['trend_c'], 3)
                 ))
             try:
                 publish.multiple(msgs, hostname="192.168.1.2")
@@ -168,7 +171,7 @@ class SampleProcessor(threading.Thread):
         s_yy = 0
         s_xy = 0
         n = len(trend_samples)
-        for (x,y) in trend_samples:
+        for (x, y) in trend_samples:
             s_x += x
             s_y += y
             s_xx += x * x
@@ -189,6 +192,7 @@ def main():
         time.sleep(reportInterval)
         samples = sampler.flush_samples()
         processor.process(samples)
+
 
 if __name__ == "__main__":
     main()
