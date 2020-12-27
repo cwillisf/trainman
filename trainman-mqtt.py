@@ -9,6 +9,7 @@
 # Import libraries and modules
 ####################################
 import collections
+from datetime import datetime
 import queue
 import threading
 import time
@@ -92,15 +93,19 @@ class SampleCollector(threading.Thread):
         return voltage
 
     def run(self):
+        start_time = datetime.now()
         while True:
             for i in range(self._num_channels):
-                voltage = self._get_voltage(i)
-                if voltage is None:
+                sample = (
+                    (datetime.now() - start_time).total_seconds(),
+                    self._get_voltage(i)
+                )
+                if sample[1] is None:
                     print("Warning: bad reading from probe " +
                         str(i) + ". Is it disconnected?")
                 else:
                     with self._sample_lock:
-                        self._samples[i].append(voltage)
+                        self._samples[i].append(sample)
 
 class SampleProcessor(threading.Thread):
     """Processes and publishes a batch of samples"""
@@ -130,9 +135,10 @@ class SampleProcessor(threading.Thread):
 
     def _process_channel(self, channel_samples, trend_samples):
         count = len(channel_samples)
-        average_v = sum(channel_samples)/count
+        average_t = sum([sample[0] for sample in channel_samples])/count
+        average_v = sum([sample[1] for sample in channel_samples])/count
         average_c = voltage_to_c(average_v)
-        trend_samples.append(average_c)
+        trend_samples.append((average_t, average_c))
         while len(trend_samples) > max_trend_samples:
             trend_samples.popleft()
         #trend_c = self._get_trend(trend_samples)
