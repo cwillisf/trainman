@@ -8,6 +8,7 @@
 ####################################
 # Import libraries and modules
 ####################################
+import threading
 import time
 
 import adafruit_ads1x15.ads1115 as ADS
@@ -52,14 +53,6 @@ channels = [AnalogIn(ads, x) for x in range(num_channels)]
 print('Starting Main Loop, press Ctrl-C to quit...')
 
 
-def get_voltage(channel):
-    voltage = channels[channel].voltage
-    if voltage > 4.5:
-        # looks like the probe is disconnected
-        return None
-    return voltage
-
-
 def voltage_to_c(voltage):
     celsius = (voltage - bias_voltage) / mv_per_c
     return celsius
@@ -68,33 +61,71 @@ def voltage_to_c(voltage):
 def c_to_f(celsius):
     return celsius * 9 / 5 + 32
 
+
+def handle_samples(samples):
+    for i in range(num_channels):
+        count = len(samples[i])
+        if count > 0:
+            averages_v = [sum(x)/len(x) for x in samples]
+            averages_c = [voltage_to_c(x) for x in averages_v]
+            averages_f = [c_to_f(x) for x in averages_c]
+            print(str(count) + ": " + str(averages_v) + "V => " +
+                str(averages_c) + "C => " + str(averages_f) + "F")
+            for i in range(num_channels):
+                try:
+                    publish.single("trainman/" + str(i) + "/temperature",
+                                round(averages_c[i], 2), hostname="192.168.1.2")
+                except OSError:
+                    print("Error publishing to MQTT. Skipping.")
+
+class SampleCollector(threading.Thread):
+    """Samples all channels in one thread and delivers in batches to another thread"""
+
+    def __init__(self, num_channels):
+        super(SampleCollector, self).__init__()
+        self.daemon = True
+        self._num_channels = num_channels
+        self._sample_lock = threading.Lock()
+        self._samples = None
+        self.flush_samples()
+
+    def flush_samples(self):
+        new_samples = [[] for i in range(self._num_channels)]
+        old_samples = None
+        with self._sample_lock:
+            old_samples = self._samples
+            self._samples = new_samples
+        return old_samples
+
+    def _get_voltage(self, channel):
+        voltage = channels[channel].voltage
+        if voltage > 4.5:
+            # looks like the probe is disconnected
+            return None
+        return voltage
+
+    def run(self):
+        while True:
+            for i in range(self._num_channels):
+                voltage = self._get_voltage(i)
+                if voltage is None:
+                    print("Warning: bad reading from probe " +
+                        str(i) + ". Is it disconnected?")
+                else:
+                    with self._sample_lock:
+                        self._samples[i].append(voltage)
+
 def main():
-    samples = [[] for i in range(num_channels)]
+    sampler = SampleCollector(num_channels)
+    sampler.start()
+
     nextReport = time.time() + reportInterval
     while True:
-        for i in range(num_channels):
-            voltage = get_voltage(i)
-            if voltage is None:
-                print("Warning: bad reading from probe " +
-                    str(i) + ". Is it disconnected?")
-            else:
-                samples[i].append(voltage)
+        time.sleep(1)
         if time.time() > nextReport:
-            count = len(samples[0])
-            if count > 0:
-                averages_v = [sum(x)/len(x) for x in samples]
-                averages_c = [voltage_to_c(x) for x in averages_v]
-                averages_f = [c_to_f(x) for x in averages_c]
-                print(str(count) + ": " + str(averages_v) + "V => " +
-                    str(averages_c) + "C => " + str(averages_f) + "F")
-                for i in range(num_channels):
-                    try:
-                        publish.single("trainman/" + str(i) + "/temperature",
-                                    round(averages_c[i], 2), hostname="192.168.1.2")
-                    except OSError:
-                        print("Error publishing to MQTT. Skipping.")
-                samples = [[] for i in range(num_channels)]
-                nextReport = time.time() + reportInterval
+            samples = sampler.flush_samples()
+            nextReport = time.time() + reportInterval
+            handle_samples(samples)
 
 if __name__ == "__main__":
     main()
