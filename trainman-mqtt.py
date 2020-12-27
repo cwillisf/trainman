@@ -8,6 +8,7 @@
 ####################################
 # Import libraries and modules
 ####################################
+import collections
 import queue
 import threading
 import time
@@ -33,6 +34,7 @@ import paho.mqtt.publish as publish
 adcgain = 2/3
 num_channels = 1
 reportInterval = 30  # seconds
+max_trend_samples = 10 # trend analysis will be over this many report intervals
 bias_voltage = 1.3  # Adafruit says 1.25
 mv_per_c = 0.0025  # Adafruit says 0.005
 
@@ -103,10 +105,12 @@ class SampleCollector(threading.Thread):
 class SampleProcessor(threading.Thread):
     """Processes and publishes a batch of samples"""
 
-    def __init__(self):
+    def __init__(self, num_channels):
         super(SampleProcessor, self).__init__()
         self.daemon = True
-        self._sampleQueue = queue.Queue()
+        self._num_channels = num_channels
+        self._sampleQueue = queue.SimpleQueue()
+        self._trendSamples = [collections.deque() for i in range(self._num_channels)]
 
     def process(self, samples):
         self._sampleQueue.put(samples)
@@ -114,26 +118,38 @@ class SampleProcessor(threading.Thread):
     def run(self):
         while True:
             samples = self._sampleQueue.get()
-            for i in range(num_channels):
-                count = len(samples[i])
-                if count > 0:
-                    averages_v = [sum(x)/len(x) for x in samples]
-                    averages_c = [voltage_to_c(x) for x in averages_v]
-                    averages_f = [c_to_f(x) for x in averages_c]
-                    print(str(count) + ": " + str(averages_v) + "V => " +
-                        str(averages_c) + "C => " + str(averages_f) + "F")
-                    for i in range(num_channels):
-                        try:
-                            publish.single("trainman/" + str(i) + "/temperature",
-                                        round(averages_c[i], 2), hostname="192.168.1.2")
-                        except OSError:
-                            print("Error publishing to MQTT. Skipping.")
+            for i in range(self._num_channels):
+                channel_samples = samples[i]
+                results = self._process_channel(channel_samples, self._trendSamples[i])
+                print(i, results)
+                try:
+                    publish.single("trainman/" + str(i) + "/temperature",
+                                round(results['temp_c'], 2), hostname="192.168.1.2")
+                except OSError:
+                    print("Error publishing to MQTT. Skipping.")
+
+    def _process_channel(self, channel_samples, trend_samples):
+        count = len(channel_samples)
+        average_v = sum(channel_samples)/count
+        average_c = voltage_to_c(average_v)
+        trend_samples.append(average_c)
+        while len(trend_samples) > max_trend_samples:
+            trend_samples.popleft()
+        #trend_c = self._get_trend(trend_samples)
+        return {
+            'count': count,
+            'voltage': average_v,
+            'temp_c': average_c,
+            'temp_f': c_to_f(average_c),
+            #'trend_c': trend_c,
+            #'trend_f': c_to_f(trend_c)
+        }
 
 def main():
     sampler = SampleCollector(num_channels)
     sampler.start()
 
-    processor = SampleProcessor()
+    processor = SampleProcessor(num_channels)
     processor.start()
 
     while True:
