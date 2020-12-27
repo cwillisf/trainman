@@ -62,8 +62,8 @@ def voltage_to_c(voltage):
     return celsius
 
 
-def c_to_f(celsius):
-    return celsius * 9 / 5 + 32
+def c_to_f(celsius, absolute=True):
+    return celsius * 9 / 5 + (32 if absolute else 0)
 
 
 class SampleCollector(threading.Thread):
@@ -122,16 +122,24 @@ class SampleProcessor(threading.Thread):
 
     def run(self):
         while True:
+            msgs = []
             samples = self._sampleQueue.get()
             for i in range(self._num_channels):
                 channel_samples = samples[i]
                 results = self._process_channel(channel_samples, self._trendSamples[i])
                 print(i, results)
-                try:
-                    publish.single("trainman/" + str(i) + "/temperature",
-                                round(results['temp_c'], 2), hostname="192.168.1.2")
-                except OSError:
-                    print("Error publishing to MQTT. Skipping.")
+                msgs.append((
+                    "trainman/" + str(i) + "/temperature",
+                    round(results['temp_c'], 2)
+                ))
+                msgs.append((
+                            "trainman/" + str(i) + "/temperature_trend",
+                            round(results['trend_c'], 2)
+                ))
+            try:
+                publish.multiple(msgs, hostname="192.168.1.2")
+            except OSError:
+                print("Error publishing to MQTT. Skipping.")
 
     def _process_channel(self, channel_samples, trend_samples):
         count = len(channel_samples)
@@ -141,15 +149,34 @@ class SampleProcessor(threading.Thread):
         trend_samples.append((average_t, average_c))
         while len(trend_samples) > max_trend_samples:
             trend_samples.popleft()
-        #trend_c = self._get_trend(trend_samples)
+        trend_c = self._get_trend(trend_samples)
         return {
             'count': count,
             'voltage': average_v,
             'temp_c': average_c,
             'temp_f': c_to_f(average_c),
-            #'trend_c': trend_c,
-            #'trend_f': c_to_f(trend_c)
+            'trend_c': trend_c,
+            'trend_f': c_to_f(trend_c, False)
         }
+
+    def _get_trend(self, trend_samples):
+        if len(trend_samples) <= 1:
+            return float('nan')
+        s_x = 0
+        s_y = 0
+        s_xx = 0
+        s_yy = 0
+        s_xy = 0
+        n = len(trend_samples)
+        for (x,y) in trend_samples:
+            s_x += x
+            s_y += y
+            s_xx += x * x
+            s_yy += y * y
+            s_xy += x * y
+        slope = (n * s_xy - s_x * s_y) / (n * s_xx - s_x * s_x)
+        return slope
+
 
 def main():
     sampler = SampleCollector(num_channels)
